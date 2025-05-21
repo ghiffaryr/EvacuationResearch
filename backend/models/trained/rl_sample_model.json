@@ -1,0 +1,1 @@
+{"model_id": "rl_sample_model", "model_type": "rl", "parameters": {"grid_size": 50, "num_agents": 100, "episodes": 100, "use_fairness": true}, "metrics": {"final_reward": 85.5, "avg_evacuation_time": 45.2, "final_gini": 0.2}}

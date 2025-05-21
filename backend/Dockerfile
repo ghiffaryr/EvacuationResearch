@@ -1,0 +1,44 @@
+FROM nvidia/cuda:11.7.1-base-ubuntu22.04
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    python3-venv \
+    libopenmpi-dev \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python3.10 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Set working directory
+WORKDIR /app
+
+# Install pipenv
+RUN pip install --upgrade pip && \
+    pip install pipenv
+
+# Copy only Pipfile first
+COPY Pipfile ./
+
+# Generate lock file and install dependencies
+RUN pipenv lock && pipenv sync --system
+
+# Copy project
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p data/scenarios models/trained
+
+# Default command to start uvicorn server directly
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

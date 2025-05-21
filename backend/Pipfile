@@ -1,0 +1,29 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+falcon = "*"
+gunicorn = "*"
+numpy = "*"
+scipy = "*"
+pandas = "*"
+torch = "*"
+pytorch-lightning = "*"
+scikit-learn = "*"
+matplotlib = "*"
+networkx = "*"
+geopy = "*"
+pydantic = "*"
+falcon-cors = "*"
+plotly = "*"
+uvicorn = "*"
+
+[dev-packages]
+pytest = "*"
+flake8 = "*"
+black = "*"
+
+[requires]
+python_version = "3.10"
