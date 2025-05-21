@@ -7,6 +7,12 @@ def create_sample_scenarios():
     scenarios_dir = os.path.join(os.path.dirname(__file__), 'scenarios')
     os.makedirs(scenarios_dir, exist_ok=True)
     
+    # Check if we already have scenarios
+    flag_file = os.path.join(scenarios_dir, '.samples_created')
+    if os.path.exists(flag_file) or len([f for f in os.listdir(scenarios_dir) if f.endswith('.json')]) > 0:
+        print("Sample scenarios already exist, skipping creation")
+        return []
+    
     scenarios = [
         # Sample 1: Office Building Layout
         {
@@ -234,6 +240,13 @@ def create_sample_scenarios():
     for scenario in scenarios:
         with open(os.path.join(scenarios_dir, f"{scenario['id']}.json"), 'w') as f:
             json.dump(scenario, f, indent=2)
+    
+    # Create flag file to indicate samples have been created
+    try:
+        with open(flag_file, 'w') as f:
+            f.write('1')
+    except Exception as e:
+        print(f"Warning: Could not create sample flag file: {e}")
     
     print(f"Created {len(scenarios)} sample scenarios")
     return scenarios

@@ -1,6 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
-import { Paper, Typography, Box, Button, Slider, Grid } from "@mui/material";
+import {
+  Paper,
+  Typography,
+  Box,
+  Button,
+  Slider,
+  Grid,
+  Divider,
+} from "@mui/material";
 
 interface MesoscopicViewProps {
   simulationData: any;
@@ -60,7 +68,7 @@ const MesoscopicView: React.FC<MesoscopicViewProps> = ({
     const cellWidth = innerWidth / gridSize;
     const cellHeight = innerHeight / gridSize;
 
-    // Create color scale for density
+    // Create color scale for density - use a more publication-friendly color scale
     let maxDensity = 10; // Default if we can't determine from data
     try {
       // Safely check for data existence and compute max
@@ -77,9 +85,63 @@ const MesoscopicView: React.FC<MesoscopicViewProps> = ({
       console.error("Error computing max density:", err);
     }
 
+    // Use a perceptually uniform, color-blind friendly color scale
     const colorScale = d3
-      .scaleSequential(d3.interpolateYlOrRd)
+      .scaleSequential(d3.interpolateViridis)
       .domain([0, maxDensity]);
+
+    // Draw background for context
+    svg
+      .append("rect")
+      .attr("width", innerWidth)
+      .attr("height", innerHeight)
+      .attr("fill", "#f8f8f8");
+
+    // Draw grid for better spatial reference
+    for (let i = 0; i <= gridSize; i += 5) {
+      // Draw every 5th gridline for clarity
+      // Vertical grid lines
+      svg
+        .append("line")
+        .attr("x1", (i / gridSize) * innerWidth)
+        .attr("y1", 0)
+        .attr("x2", (i / gridSize) * innerWidth)
+        .attr("y2", innerHeight)
+        .attr("stroke", "#dddddd")
+        .attr("stroke-width", 0.5);
+
+      // Horizontal grid lines
+      svg
+        .append("line")
+        .attr("x1", 0)
+        .attr("y1", (i / gridSize) * innerHeight)
+        .attr("x2", innerWidth)
+        .attr("y2", (i / gridSize) * innerHeight)
+        .attr("stroke", "#dddddd")
+        .attr("stroke-width", 0.5);
+
+      // Add grid coordinates every 10 steps
+      if (i % 10 === 0) {
+        // X-axis labels
+        svg
+          .append("text")
+          .attr("x", (i / gridSize) * innerWidth)
+          .attr("y", innerHeight + 15)
+          .attr("text-anchor", "middle")
+          .style("font-size", "8px")
+          .text(i);
+
+        // Y-axis labels
+        svg
+          .append("text")
+          .attr("x", -15)
+          .attr("y", (i / gridSize) * innerHeight)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "central")
+          .style("font-size", "8px")
+          .text(i);
+      }
+    }
 
     // Safely prepare the data
     let cellsData: CellData[] = []; // Explicitly type cellsData
@@ -111,19 +173,24 @@ const MesoscopicView: React.FC<MesoscopicViewProps> = ({
       cellsData = []; // Reset on error
     }
 
+    // Draw density cells with improved rendering
     svg
-      .selectAll("rect")
+      .selectAll("rect.density-cell")
       .data(cellsData)
       .enter()
       .append("rect")
+      .attr("class", "density-cell")
       .attr("x", (d: CellData) => d.x * cellWidth)
       .attr("y", (d: CellData) => d.y * cellHeight)
       .attr("width", cellWidth)
       .attr("height", cellHeight)
       .attr("fill", (d: CellData) => colorScale(d.value))
-      .attr("stroke", "none");
+      .attr("stroke", "none")
+      .attr("opacity", (d: CellData) =>
+        Math.min(0.9, 0.2 + (d.value / maxDensity) * 0.8)
+      );
 
-    // Draw velocity vectors (only show some for clarity)
+    // Draw velocity vectors with improved visibility
     if (simulationData.velocity_x && simulationData.velocity_y) {
       // Sample velocity vectors (show every nth cell)
       const vectorSamplingRate = Math.max(1, Math.floor(gridSize / 20));
@@ -146,18 +213,19 @@ const MesoscopicView: React.FC<MesoscopicViewProps> = ({
         }
       }
 
-      // Draw vectors
+      // Draw vectors with improved styling
       svg
-        .selectAll("line")
+        .selectAll("line.vector")
         .data(vectors)
         .enter()
         .append("line")
+        .attr("class", "vector")
         .attr("x1", (d) => (d.x + 0.5) * cellWidth)
         .attr("y1", (d) => (d.y + 0.5) * cellHeight)
         .attr("x2", (d) => (d.x + 0.5 + d.vx * 0.8) * cellWidth)
         .attr("y2", (d) => (d.y + 0.5 + d.vy * 0.8) * cellHeight)
         .attr("stroke", "#000000")
-        .attr("stroke-width", 1)
+        .attr("stroke-width", 1.5) // Thicker lines
         .attr("marker-end", "url(#arrow)");
     }
 
@@ -176,7 +244,7 @@ const MesoscopicView: React.FC<MesoscopicViewProps> = ({
       .attr("d", "M0,-5L10,0L0,5")
       .attr("fill", "#000000");
 
-    // Draw walls
+    // Draw walls with increased visibility
     if (simulationData.walls) {
       simulationData.walls.forEach((wall: any) => {
         const [[x1, y1], [x2, y2]] = wall;
@@ -191,28 +259,78 @@ const MesoscopicView: React.FC<MesoscopicViewProps> = ({
           .attr("y1", scaledY1)
           .attr("x2", scaledX2)
           .attr("y2", scaledY2)
-          .attr("stroke", "#444444")
-          .attr("stroke-width", 3);
+          .attr("stroke", "#000000") // Black walls for better contrast
+          .attr("stroke-width", 4)
+          .attr("stroke-linecap", "round"); // Rounded ends
       });
     }
 
-    // Draw exits
+    // Draw exits with improved visibility
     if (simulationData.exits) {
       simulationData.exits.forEach((exit: any) => {
         const [x, y] = exit;
         const scaledX = ((x * gridSize) / 20) * cellWidth;
         const scaledY = ((y * gridSize) / 20) * cellHeight;
 
+        // Draw exit border
+        svg
+          .append("rect")
+          .attr("x", scaledX - cellWidth - 1)
+          .attr("y", scaledY - cellHeight - 1)
+          .attr("width", cellWidth * 2 + 2)
+          .attr("height", cellHeight * 2 + 2)
+          .attr("fill", "#000000");
+
+        // Draw exit
         svg
           .append("rect")
           .attr("x", scaledX - cellWidth)
           .attr("y", scaledY - cellHeight)
           .attr("width", cellWidth * 2)
           .attr("height", cellHeight * 2)
-          .attr("fill", "#00ff00")
-          .attr("opacity", 0.7);
+          .attr("fill", "#00cc00")
+          .attr("opacity", 0.9);
+
+        // Add "EXIT" label for clarity
+        svg
+          .append("text")
+          .attr("x", scaledX)
+          .attr("y", scaledY)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "central")
+          .style("font-size", "10px")
+          .style("font-weight", "bold")
+          .style("fill", "#ffffff")
+          .text("EXIT");
       });
     }
+
+    // Add title and axis labels for academic presentation
+    svg
+      .append("text")
+      .attr("x", innerWidth / 2)
+      .attr("y", -10)
+      .attr("text-anchor", "middle")
+      .style("font-size", "14px")
+      .style("font-weight", "bold")
+      .text("Mesoscopic Density Field and Flow");
+
+    svg
+      .append("text")
+      .attr("x", innerWidth / 2)
+      .attr("y", innerHeight + margin.bottom - 5)
+      .attr("text-anchor", "middle")
+      .style("font-size", "12px")
+      .text("X-position (meters)");
+
+    svg
+      .append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("x", -innerHeight / 2)
+      .attr("y", -margin.left + 10)
+      .attr("text-anchor", "middle")
+      .style("font-size", "12px")
+      .text("Y-position (meters)");
 
     // Add colorbar
     const legendWidth = 20;
@@ -360,6 +478,13 @@ const MesoscopicView: React.FC<MesoscopicViewProps> = ({
     >
       <Typography variant="h6" gutterBottom>
         Mesoscopic Simulation
+        <Typography
+          component="span"
+          variant="subtitle2"
+          sx={{ ml: 1, color: "text.secondary" }}
+        >
+          (Flow-based Model)
+        </Typography>
         {simulationData?.mock_data && (
           <span
             style={{
@@ -372,6 +497,113 @@ const MesoscopicView: React.FC<MesoscopicViewProps> = ({
           </span>
         )}
       </Typography>
+
+      {/* Add comprehensive legend */}
+      <Box
+        sx={{
+          mb: 2,
+          p: 1,
+          border: "1px solid #e0e0e0",
+          borderRadius: 1,
+          bgcolor: "#f9f9f9",
+        }}
+      >
+        <Typography variant="subtitle2" gutterBottom>
+          Legend:
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={4}>
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              <Box
+                sx={{
+                  width: 16,
+                  height: 16,
+                  background:
+                    "linear-gradient(to top, #440154, #21918c, #fde725)" /* Viridis */,
+                  mr: 1,
+                }}
+              />
+              <Typography variant="caption">
+                Population Density (people/m²)
+              </Typography>
+            </Box>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={4}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 5,
+                backgroundColor: "#000",
+                mr: 1,
+                position: "relative",
+                "&::after": {
+                  content: '""',
+                  position: "absolute",
+                  right: -8,
+                  top: -3,
+                  borderLeft: "8px solid #000",
+                  borderTop: "5px solid transparent",
+                  borderBottom: "5px solid transparent",
+                },
+              }}
+            />
+            <Typography variant="caption">Flow Vector</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={4}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#000000",
+                mr: 1,
+              }}
+            />
+            <Typography variant="caption">Wall</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={4}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#00cc00",
+                mr: 1,
+              }}
+            />
+            <Typography variant="caption">Exit</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={8}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Typography variant="caption">
+              Scale: 1 grid unit = 0.4 meters
+            </Typography>
+          </Grid>
+        </Grid>
+      </Box>
+
+      <Divider sx={{ mb: 2 }} />
 
       <Box sx={{ flexGrow: 1, overflow: "hidden" }}>
         <svg
@@ -406,9 +638,22 @@ const MesoscopicView: React.FC<MesoscopicViewProps> = ({
           </Grid>
 
           <Box mt={2}>
-            <Typography variant="body2" color="text.secondary">
-              Total occupancy: {getSafeDensitySum()} people
-            </Typography>
+            <Grid container spacing={1} alignItems="center">
+              <Grid item xs={7}>
+                <Typography variant="body2" color="text.secondary">
+                  Total occupancy: {getSafeDensitySum()} people
+                </Typography>
+              </Grid>
+              <Grid item xs={5}>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  align="right"
+                >
+                  Time: {(localTimeStep * 0.1).toFixed(1)} s
+                </Typography>
+              </Grid>
+            </Grid>
           </Box>
         </>
       )}

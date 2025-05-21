@@ -8,11 +8,12 @@ import {
   Grid,
   ToggleButtonGroup,
   ToggleButton,
+  Divider,
 } from "@mui/material";
 import * as d3 from "d3";
 import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, Text } from "@react-three/drei";
 
 interface MacroscopicViewProps {
   simulationData?: {
@@ -82,7 +83,9 @@ function DensityMesh({
     <mesh ref={meshRef} rotation={[-Math.PI / 2, 0, 0]} position={[-10, 0, 10]}>
       <planeGeometry args={[20, 20, resolution - 1, resolution - 1]} />
       <meshStandardMaterial
-        color="#ff9500"
+        color="#ff7700"
+        emissive="#ff9900"
+        emissiveIntensity={0.3}
         side={THREE.DoubleSide}
         wireframe={false}
         flatShading={true}
@@ -138,7 +141,7 @@ function BuildingLayout({
             quaternion={quaternion}
           >
             <boxGeometry args={[length, 1, 0.1]} />
-            <meshStandardMaterial color="#444444" />
+            <meshStandardMaterial color="#111111" /> {/* Darker walls */}
           </mesh>
         );
       })}
@@ -147,17 +150,39 @@ function BuildingLayout({
       {exits.map((exit, idx) => {
         const [x, y] = exit;
         return (
-          <mesh key={idx} position={[x - 10, 0, -y + 10]}>
-            <boxGeometry args={[1, 0.2, 1]} />
-            <meshStandardMaterial color="#00ff00" transparent opacity={0.7} />
-          </mesh>
+          <group key={idx}>
+            <mesh position={[x - 10, 0, -y + 10]}>
+              <boxGeometry args={[1.2, 0.2, 1.2]} />
+              <meshStandardMaterial
+                color="#00cc00"
+                emissive="#00ff00"
+                emissiveIntensity={0.5}
+              />
+            </mesh>
+            {/* Add EXIT label */}
+            <Text
+              position={[x - 10, 0.5, -y + 10]}
+              color="#ffffff"
+              fontSize={0.3}
+              anchorX="center"
+              anchorY="middle"
+            >
+              EXIT
+            </Text>
+          </group>
         );
       })}
+
+      {/* Add visible grid for reference */}
+      <gridHelper args={[20, 20, "#999999", "#cccccc"]} position={[0, 0, 0]} />
+
+      {/* Add axis helpers */}
+      <axesHelper args={[5]} position={[-10, 0, -10]} />
     </>
   );
 }
 
-// Component for visualizing fire in 3D
+// Component for visualizing fire in 3D with improved visibility
 function FireVisualization({ data }: { data: number[][] }) {
   const points: THREE.Vector3[] = [];
   const colors: THREE.Color[] = [];
@@ -206,11 +231,12 @@ function FireVisualization({ data }: { data: number[][] }) {
     <points>
       <bufferGeometry {...pointsGeometry} />
       <pointsMaterial
-        size={0.3}
+        size={0.5} // Larger points
         vertexColors={true}
         transparent={true}
-        opacity={0.8}
+        opacity={0.9} // Higher opacity
         blending={THREE.AdditiveBlending}
+        sizeAttenuation={true}
       />
     </points>
   );
@@ -261,18 +287,73 @@ export default function MacroscopicView({
     const cellWidth = innerWidth / gridResolution;
     const cellHeight = innerHeight / gridResolution;
 
+    // Draw background grid for better reference
+    svg
+      .append("rect")
+      .attr("width", innerWidth)
+      .attr("height", innerHeight)
+      .attr("fill", "#f8f8f8");
+
+    // Draw grid lines for reference
+    for (let i = 0; i <= gridResolution; i += 10) {
+      // Draw every 10th gridline
+      // Vertical lines
+      svg
+        .append("line")
+        .attr("x1", (i / gridResolution) * innerWidth)
+        .attr("y1", 0)
+        .attr("x2", (i / gridResolution) * innerWidth)
+        .attr("y2", innerHeight)
+        .attr("stroke", "#dddddd")
+        .attr("stroke-width", 1);
+
+      // Horizontal lines
+      svg
+        .append("line")
+        .attr("x1", 0)
+        .attr("y1", (i / gridResolution) * innerHeight)
+        .attr("x2", innerWidth)
+        .attr("y2", (i / gridResolution) * innerHeight)
+        .attr("stroke", "#dddddd")
+        .attr("stroke-width", 1);
+
+      // Add grid coordinates for scale reference
+      if (i % 20 === 0) {
+        // X coordinate
+        svg
+          .append("text")
+          .attr("x", (i / gridResolution) * innerWidth)
+          .attr("y", innerHeight + 15)
+          .attr("text-anchor", "middle")
+          .style("font-size", "10px")
+          .text(((i / gridResolution) * 20).toFixed(0) + "m");
+
+        // Y coordinate
+        svg
+          .append("text")
+          .attr("x", -15)
+          .attr("y", (i / gridResolution) * innerHeight)
+          .attr("text-anchor", "end")
+          .attr("dominant-baseline", "central")
+          .style("font-size", "10px")
+          .text(((i / gridResolution) * 20).toFixed(0) + "m");
+      }
+    }
+
+    // Select appropriate data and color scales based on visualization layer
     let colorScale;
     let data: number[][];
 
-    // Select the appropriate data based on visualization layer
     if (visLayer === "density") {
       data = simulationData.density[localTimeStep];
+      // Use a perceptually uniform color scale from dark purple to yellow
       colorScale = d3
-        .scaleSequential(d3.interpolateYlOrRd)
+        .scaleSequential(d3.interpolateInferno)
         .domain([0, d3.max(data.flat()) || 10]);
     } else if (visLayer === "fire" && simulationData.fire) {
       data = simulationData.fire[localTimeStep];
-      colorScale = d3.scaleSequential(d3.interpolateOrRd).domain([0, 1]);
+      // Use appropriate fire color scale (yellow to red)
+      colorScale = d3.scaleSequential(d3.interpolateYlOrRd).domain([0, 1]);
     } else {
       // Velocity magnitude
       data = simulationData.velocity_x[localTimeStep].map((row, i) =>
@@ -284,14 +365,15 @@ export default function MacroscopicView({
           )
         )
       );
+      // Use blue-based color scale for velocity
       colorScale = d3
-        .scaleSequential(d3.interpolateBlues)
+        .scaleSequential(d3.interpolatePuBu)
         .domain([0, d3.max(data.flat()) || 2]);
     }
 
-    // Draw heatmap
+    // Draw heatmap with improved rendering
     svg
-      .selectAll("rect")
+      .selectAll("rect.heatmap")
       .data(
         data.flat().map((value, i) => {
           const x = i % gridResolution;
@@ -310,14 +392,17 @@ export default function MacroscopicView({
       )
       .enter()
       .append("rect")
+      .attr("class", "heatmap")
       .attr("x", (d) => d.x * cellWidth)
       .attr("y", (d) => d.y * cellHeight)
       .attr("width", cellWidth)
       .attr("height", cellHeight)
       .attr("fill", (d) => colorScale(d.value))
-      .attr("stroke", "none");
+      .attr("opacity", (d) =>
+        Math.min(0.95, 0.3 + (d.value / (colorScale.domain()[1] || 1)) * 0.7)
+      );
 
-    // Draw velocity vectors if showing velocity layer
+    // Draw velocity vectors with improved visibility
     if (visLayer === "velocity") {
       // Sample velocity vectors (show every nth cell)
       const vectorSamplingRate = Math.max(1, Math.floor(gridResolution / 25));
@@ -351,8 +436,8 @@ export default function MacroscopicView({
         .attr("y1", (d) => (d.y + 0.5) * cellHeight)
         .attr("x2", (d) => (d.x + 0.5 + d.vx * 0.8) * cellWidth)
         .attr("y2", (d) => (d.y + 0.5 + d.vy * 0.8) * cellHeight)
-        .attr("stroke", "#000000")
-        .attr("stroke-width", 1)
+        .attr("stroke", "#000000") // Black for better visibility
+        .attr("stroke-width", 1.5) // Thicker lines
         .attr("marker-end", "url(#arrow)");
 
       // Add arrow marker for velocity vectors
@@ -371,9 +456,9 @@ export default function MacroscopicView({
         .attr("fill", "#000000");
     }
 
-    // Draw building layout if available
+    // Draw building layout with higher contrast
     if (simulationData.building_layout) {
-      // Draw walls
+      // Draw walls with better visibility
       if (simulationData.building_layout.walls) {
         simulationData.building_layout.walls.forEach((wall) => {
           const [[x1, y1], [x2, y2]] = wall;
@@ -388,29 +473,83 @@ export default function MacroscopicView({
             .attr("y1", scaledY1)
             .attr("x2", scaledX2)
             .attr("y2", scaledY2)
-            .attr("stroke", "#444444")
-            .attr("stroke-width", 3);
+            .attr("stroke", "#000000") // Solid black walls
+            .attr("stroke-width", 4) // Thicker walls
+            .attr("stroke-linecap", "round"); // Rounded ends
         });
       }
 
-      // Draw exits
+      // Draw exits with higher contrast and visual indicators
       if (simulationData.building_layout.exits) {
         simulationData.building_layout.exits.forEach((exit) => {
           const [x, y] = exit;
           const scaledX = ((x * gridResolution) / 20) * cellWidth;
           const scaledY = ((y * gridResolution) / 20) * cellHeight;
 
+          // Draw black border for exit
+          svg
+            .append("rect")
+            .attr("x", scaledX - cellWidth - 2)
+            .attr("y", scaledY - cellHeight - 2)
+            .attr("width", cellWidth * 2 + 4)
+            .attr("height", cellHeight * 2 + 4)
+            .attr("fill", "#000000");
+
+          // Draw exit
           svg
             .append("rect")
             .attr("x", scaledX - cellWidth)
             .attr("y", scaledY - cellHeight)
             .attr("width", cellWidth * 2)
             .attr("height", cellHeight * 2)
-            .attr("fill", "#00ff00")
-            .attr("opacity", 0.7);
+            .attr("fill", "#00cc00") // Brighter green
+            .attr("opacity", 1.0); // Full opacity
+
+          // Add "EXIT" text
+          svg
+            .append("text")
+            .attr("x", scaledX)
+            .attr("y", scaledY + 4)
+            .attr("text-anchor", "middle")
+            .attr("dominant-baseline", "middle")
+            .attr("font-size", "10px")
+            .attr("font-weight", "bold")
+            .attr("fill", "#ffffff")
+            .text("EXIT");
         });
       }
     }
+
+    // Add comprehensive title and axis labels
+    svg
+      .append("text")
+      .attr("x", innerWidth / 2)
+      .attr("y", -10)
+      .attr("text-anchor", "middle")
+      .style("font-size", "14px")
+      .style("font-weight", "bold")
+      .text(
+        `Macroscopic ${
+          visLayer.charAt(0).toUpperCase() + visLayer.slice(1)
+        } Field`
+      );
+
+    svg
+      .append("text")
+      .attr("x", innerWidth / 2)
+      .attr("y", innerHeight + margin.bottom - 5)
+      .attr("text-anchor", "middle")
+      .style("font-size", "12px")
+      .text("X-position (meters)");
+
+    svg
+      .append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("x", -innerHeight / 2)
+      .attr("y", -margin.left + 12)
+      .attr("text-anchor", "middle")
+      .style("font-size", "12px")
+      .text("Y-position (meters)");
 
     // Add colorbar
     const legendWidth = 20;
@@ -574,8 +713,141 @@ export default function MacroscopicView({
     >
       <Typography variant="h6" gutterBottom>
         Macroscopic Simulation
+        <Typography
+          component="span"
+          variant="subtitle2"
+          sx={{ ml: 1, color: "text.secondary" }}
+        >
+          (Continuum Model)
+        </Typography>
       </Typography>
 
+      {/* Academic description */}
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ mb: 1, display: "block" }}
+      >
+        Representing evacuation dynamics as continuous density and velocity
+        fields using partial differential equations.
+      </Typography>
+
+      {/* Add comprehensive legend */}
+      <Box
+        sx={{
+          mb: 2,
+          p: 1,
+          border: "1px solid #e0e0e0",
+          borderRadius: 1,
+          bgcolor: "#f9f9f9",
+        }}
+      >
+        <Typography variant="subtitle2" gutterBottom>
+          Legend:
+        </Typography>
+        <Grid container spacing={2}>
+          {visLayer === "density" && (
+            <Grid item xs={12} md={4}>
+              <Box sx={{ display: "flex", alignItems: "center" }}>
+                <Box
+                  sx={{
+                    width: 16,
+                    height: 16,
+                    background:
+                      "linear-gradient(to top, #000004, #781c6d, #ed6925, #fcfdbf)" /* Inferno */,
+                    mr: 1,
+                  }}
+                />
+                <Typography variant="caption">
+                  Population Density (people/m²)
+                </Typography>
+              </Box>
+            </Grid>
+          )}
+
+          {visLayer === "velocity" && (
+            <Grid item xs={12} md={4}>
+              <Box sx={{ display: "flex", alignItems: "center" }}>
+                <Box
+                  sx={{
+                    width: 16,
+                    height: 16,
+                    background:
+                      "linear-gradient(to top, #fff7fb, #023858)" /* PuBu */,
+                    mr: 1,
+                  }}
+                />
+                <Typography variant="caption">Flow Velocity (m/s)</Typography>
+              </Box>
+            </Grid>
+          )}
+
+          {visLayer === "fire" && (
+            <Grid item xs={12} md={4}>
+              <Box sx={{ display: "flex", alignItems: "center" }}>
+                <Box
+                  sx={{
+                    width: 16,
+                    height: 16,
+                    background:
+                      "linear-gradient(to top, #ffffcc, #fd8d3c, #800026)" /* YlOrRd */,
+                    mr: 1,
+                  }}
+                />
+                <Typography variant="caption">Fire Intensity (0-1)</Typography>
+              </Box>
+            </Grid>
+          )}
+
+          <Grid
+            item
+            xs={6}
+            md={4}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#000000",
+                mr: 1,
+              }}
+            />
+            <Typography variant="caption">Wall</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={4}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#00cc00",
+                mr: 1,
+              }}
+            />
+            <Typography variant="caption">Exit</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={12}
+            md={12}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Typography variant="caption">
+              Scale: Grid resolution: {simulationData?.grid_resolution || 100}×
+              {simulationData?.grid_resolution || 100}, Domain size: 20m×20m
+            </Typography>
+          </Grid>
+        </Grid>
+      </Box>
+
+      {/* View mode and visualization layer controls */}
       <Grid container spacing={2} mb={2}>
         <Grid item>
           <ToggleButtonGroup
@@ -603,6 +875,8 @@ export default function MacroscopicView({
           </ToggleButtonGroup>
         </Grid>
       </Grid>
+
+      <Divider sx={{ mb: 2 }} />
 
       <Box sx={{ flexGrow: 1, overflow: "hidden", minHeight: 400 }}>
         {viewMode === "2d" ? (
@@ -673,7 +947,7 @@ export default function MacroscopicView({
           </Grid>
           <Grid item xs={6}>
             <Typography variant="body2" color="text.secondary">
-              Evacuated: {currentEvacuated}
+              Evacuated: {currentEvacuated} people
             </Typography>
           </Grid>
         </Grid>

@@ -1,7 +1,15 @@
 import { useRef, useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { Box, Button, Slider, Typography, Paper, Grid } from "@mui/material";
+import {
+  Box,
+  Button,
+  Slider,
+  Typography,
+  Paper,
+  Grid,
+  Divider,
+} from "@mui/material";
 import * as THREE from "three";
 
 interface Agent {
@@ -77,7 +85,8 @@ function Walls({ walls }: { walls: Wall[] }) {
             quaternion={quaternion}
           >
             <boxGeometry args={[length, 2, 0.2]} />
-            <meshStandardMaterial color="#444444" />
+            <meshStandardMaterial color="#222222" roughness={0.8} />{" "}
+            {/* Darker walls for better visibility */}
           </mesh>
         );
       })}
@@ -91,7 +100,14 @@ function Exits({ exits }: { exits: Exit[] }) {
       {exits.map((exit, idx) => (
         <mesh key={idx} position={exit.position}>
           <boxGeometry args={[exit.size, exit.size, 0.1]} />
-          <meshStandardMaterial color="#00ff00" transparent opacity={0.7} />
+          <meshStandardMaterial
+            color="#00aa00"
+            emissive="#00ff00"
+            emissiveIntensity={0.5}
+            transparent
+            opacity={0.8}
+          />{" "}
+          {/* Brighter green for exits */}
         </mesh>
       ))}
     </>
@@ -102,12 +118,15 @@ function Hazards({ hazards }: { hazards: Hazard[] }) {
   return (
     <>
       {hazards.map((hazard, idx) => {
-        let color = "#ff0000"; // Default fire color
+        let color = "#ff3300"; // Default fire color
+        let emissive = "#ff6600"; // Add glow to fire
 
         if (hazard.type === "water") {
-          color = "#0000ff";
+          color = "#0066ff";
+          emissive = "#0099ff";
         } else if (hazard.type === "structural") {
-          color = "#8b4513";
+          color = "#aa6600";
+          emissive = "#cc8800";
         }
 
         return (
@@ -115,8 +134,10 @@ function Hazards({ hazards }: { hazards: Hazard[] }) {
             <sphereGeometry args={[hazard.radius, 32, 32]} />
             <meshStandardMaterial
               color={color}
+              emissive={emissive}
+              emissiveIntensity={0.6}
               transparent
-              opacity={Math.min(0.8, hazard.intensity * 0.8)}
+              opacity={Math.min(0.9, hazard.intensity * 0.9)}
             />
           </mesh>
         );
@@ -129,18 +150,26 @@ function Agents({ agents }: { agents: Agent[] }) {
   return (
     <>
       {agents.map((agent, idx) => {
-        const color = agent.status === 0 ? "#1976d2" : "#4caf50";
         const isActive = agent.status === 0;
+        // More distinct colors with better contrast
+        const color = isActive ? "#0077ff" : "#00cc44";
+        const emissive = isActive ? "#0066cc" : "#009933";
 
         // Skip rendering agents that have been evacuated
         if (!isActive && agent.position[0] < -100) return null;
 
         return (
           <mesh key={idx} position={agent.position}>
-            <sphereGeometry args={[0.3, 16, 16]} />
-            <meshStandardMaterial color={color} />
+            <cylinderGeometry args={[0.25, 0.25, 0.7, 16]} />
+            <meshStandardMaterial
+              color={color}
+              emissive={emissive}
+              emissiveIntensity={0.3}
+              metalness={0.2}
+              roughness={0.7}
+            />
 
-            {/* Add velocity vector indicator for active agents */}
+            {/* Add velocity vector indicator for active agents with improved visibility */}
             {isActive && agent.velocity && (
               <arrowHelper
                 args={[
@@ -150,8 +179,10 @@ function Agents({ agents }: { agents: Agent[] }) {
                     agent.velocity[2]
                   ).normalize(),
                   new THREE.Vector3(0, 0, 0),
-                  0.5,
-                  0xffff00,
+                  0.7, // Longer arrow
+                  0xffcc00, // Brighter yellow color
+                  0.2, // Head length
+                  0.1, // Head width
                 ]}
               />
             )}
@@ -169,9 +200,9 @@ function Scene({
 }) {
   return (
     <>
-      <ambientLight intensity={0.5} />
-      <pointLight position={[10, 10, 10]} />
-
+      <ambientLight intensity={0.7} /> {/* Brighter ambient light */}
+      <pointLight position={[10, 10, 10]} intensity={0.8} />
+      <pointLight position={[-10, 10, -10]} intensity={0.5} color="#f0f0ff" />
       {/* Display simulation elements if data is available */}
       {simulationData && (
         <>
@@ -180,11 +211,20 @@ function Scene({
           <Hazards hazards={simulationData.hazards} />
           <Agents agents={simulationData.agents} />
 
-          {/* Ground plane */}
+          {/* Ground plane with visible grid */}
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
             <planeGeometry args={[50, 50]} />
-            <meshStandardMaterial color="#e0e0e0" />
+            <meshStandardMaterial color="#f0f0f0" /> {/* Light gray floor */}
           </mesh>
+
+          {/* Add visible grid and axes for better spatial reference */}
+          <gridHelper
+            args={[50, 50, "#999999", "#dddddd"]}
+            position={[0, -0.49, 0]}
+          />
+
+          {/* Add coordinate axes */}
+          <axesHelper args={[10]} position={[-20, -0.4, -20]} />
         </>
       )}
     </>
@@ -249,7 +289,151 @@ export default function MicroscopicView({
     >
       <Typography variant="h6" gutterBottom>
         Microscopic Simulation
+        <Typography
+          component="span"
+          variant="subtitle2"
+          sx={{ ml: 1, color: "text.secondary" }}
+        >
+          (Agent-Based Model)
+        </Typography>
       </Typography>
+
+      {/* Comprehensive legend with all simulation elements */}
+      <Box
+        sx={{
+          mb: 2,
+          p: 1,
+          border: "1px solid #e0e0e0",
+          borderRadius: 1,
+          bgcolor: "#f9f9f9",
+        }}
+      >
+        <Typography variant="subtitle2" gutterBottom>
+          Legend:
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#0077ff",
+                borderRadius: "50%",
+                mr: 1,
+                boxShadow: "0 0 3px #0077ff",
+              }}
+            />
+            <Typography variant="caption">Active Agent</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#00cc44",
+                borderRadius: "50%",
+                mr: 1,
+                boxShadow: "0 0 3px #00cc44",
+              }}
+            />
+            <Typography variant="caption">Evacuated Agent</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#222222",
+                mr: 1,
+              }}
+            />
+            <Typography variant="caption">Wall</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#00aa00",
+                mr: 1,
+                boxShadow: "0 0 3px #00ff00",
+              }}
+            />
+            <Typography variant="caption">Exit</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#ff3300",
+                borderRadius: "50%",
+                mr: 1,
+                boxShadow: "0 0 3px #ff6600",
+              }}
+            />
+            <Typography variant="caption">Fire Hazard</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 5,
+                backgroundColor: "#ffcc00",
+                mr: 1,
+                position: "relative",
+                "&::after": {
+                  content: '""',
+                  position: "absolute",
+                  right: -8,
+                  top: -3,
+                  borderLeft: "8px solid #ffcc00",
+                  borderTop: "5px solid transparent",
+                  borderBottom: "5px solid transparent",
+                },
+              }}
+            />
+            <Typography variant="caption">Velocity Vector</Typography>
+          </Grid>
+        </Grid>
+      </Box>
+
+      <Divider sx={{ mb: 2 }} />
 
       <Box sx={{ height: 500, mb: 2 }}>
         <Canvas camera={{ position: [0, 10, 20], fov: 60 }}>
@@ -282,12 +466,19 @@ export default function MicroscopicView({
       </Grid>
 
       <Box mt={2}>
-        <Typography variant="body2" color="text.secondary">
-          {simulationData && simulationData.agents
-            ? `Agents: ${
-                simulationData.agents.filter((a) => a.status === 0).length
-              } active`
-            : "No data"}
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ display: "flex", justifyContent: "space-between" }}
+        >
+          <span>
+            {simulationData && simulationData.agents
+              ? `Agents: ${
+                  simulationData.agents.filter((a) => a.status === 0).length
+                } active`
+              : "No data"}
+          </span>
+          <span>Scale: 1 unit = 1 meter</span>
         </Typography>
       </Box>
     </Paper>

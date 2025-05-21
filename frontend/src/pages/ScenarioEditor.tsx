@@ -24,6 +24,9 @@ import {
   DialogActions,
   Tabs,
   Tab,
+  Card,
+  CardContent,
+  CardActions,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -111,10 +114,19 @@ export default function ScenarioEditor() {
 
   // Dialog state
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  // Add state for scenario list
+  const [relatedScenarios, setRelatedScenarios] = useState<
+    Array<{ id: string; name: string; type: string }>
+  >([]);
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
+
+  // Load all scenarios to show in the list
+  useEffect(() => {
+    fetchScenarios();
+  }, []);
 
   // Load scenario if editing
   useEffect(() => {
@@ -122,6 +134,24 @@ export default function ScenarioEditor() {
       loadScenario(id);
     }
   }, [id]);
+
+  // Add function to fetch all scenarios
+  const fetchScenarios = async () => {
+    try {
+      const response = await axios.get("/api/scenarios");
+      if (response.data && response.data.scenarios) {
+        setRelatedScenarios(
+          response.data.scenarios.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            type: s.type,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error("Error fetching scenarios list:", err);
+    }
+  };
 
   const loadScenario = async (scenarioId: string) => {
     setLoading(true);
@@ -297,9 +327,11 @@ export default function ScenarioEditor() {
   return (
     <Box>
       <Box display="flex" alignItems="center" mb={3}>
-        <IconButton onClick={() => navigate("/scenarios")} sx={{ mr: 2 }}>
-          <BackIcon />
-        </IconButton>
+        {id == "Edit Scenario" && (
+          <IconButton onClick={() => navigate("/scenarios")} sx={{ mr: 2 }}>
+            <BackIcon />
+          </IconButton>
+        )}
         <Typography variant="h4">
           {id ? "Edit Scenario" : "Create New Scenario"}
         </Typography>
@@ -873,6 +905,74 @@ export default function ScenarioEditor() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Add Scenario List */}
+      <Paper elevation={3} sx={{ p: 3, mt: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Related Scenarios
+        </Typography>
+
+        {relatedScenarios.length === 0 ? (
+          <Typography color="text.secondary">
+            No other scenarios available
+          </Typography>
+        ) : (
+          <Grid container spacing={2}>
+            {relatedScenarios
+              .filter((s) => s.id !== id) // Don't show current scenario
+              .map((scenario) => (
+                <Grid item xs={12} sm={6} md={4} key={scenario.id}>
+                  <Card variant="outlined">
+                    <CardContent>
+                      <Typography variant="subtitle1">
+                        {scenario.name}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Type: {scenario.type}
+                      </Typography>
+                    </CardContent>
+                    <CardActions>
+                      <Button
+                        size="small"
+                        onClick={() => navigate(`/scenarios/${scenario.id}`)}
+                      >
+                        View
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          if (scenario.id !== id) {
+                            loadScenario(scenario.id);
+                            navigate(`/scenarios/${scenario.id}`);
+                          }
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Do you want to use this as a template for a new scenario?"
+                            )
+                          ) {
+                            loadScenario(scenario.id);
+                            // Clear the ID to create a new scenario
+                            navigate("/scenarios/new");
+                            setScenarioName(`Copy of ${scenario.name}`);
+                          }
+                        }}
+                      >
+                        Use as Template
+                      </Button>
+                    </CardActions>
+                  </Card>
+                </Grid>
+              ))}
+          </Grid>
+        )}
+      </Paper>
     </Box>
   );
 }
