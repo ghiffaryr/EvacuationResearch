@@ -33,6 +33,18 @@ interface Hazard {
   type: string;
   radius: number;
   intensity: number;
+  spread_rate?: number;
+  duration?: number;
+  aftershocks?: boolean;
+  rise_rate?: number;
+  flow_direction?: [number, number];
+  cause?: string;
+  is_debris?: boolean;
+  dimensions?: [number, number];
+  is_transparent?: boolean;
+  is_open?: boolean;
+  texture?: string;
+  height?: number;
 }
 
 interface MicroscopicViewProps {
@@ -120,24 +132,55 @@ function Hazards({ hazards }: { hazards: Hazard[] }) {
       {hazards.map((hazard, idx) => {
         let color = "#ff3300"; // Default fire color
         let emissive = "#ff6600"; // Add glow to fire
+        let opacity = Math.min(0.9, hazard.intensity * 0.9);
 
-        if (hazard.type === "water") {
-          color = "#0066ff";
+        if (hazard.type === "earthquake") {
+          color = "#8800bb"; // Purple for earthquake
+          emissive = "#aa66cc";
+        } else if (hazard.type === "flood" || hazard.type === "water") {
+          color = "#0099ff"; // Blue for flood
           emissive = "#0099ff";
+          opacity = Math.min(0.7, hazard.intensity * 0.7); // More transparent
         } else if (hazard.type === "structural") {
-          color = "#aa6600";
+          color = "#aa6600"; // Brown for structural damage
           emissive = "#cc8800";
         }
 
+        // Choose the appropriate geometry based on hazard type
+        const renderGeometry = () => {
+          if (hazard.type === "earthquake") {
+            return (
+              <cylinderGeometry
+                args={[hazard.radius, hazard.radius, 0.5, 32]}
+              />
+            );
+          } else if (hazard.type === "flood" || hazard.type === "water") {
+            return (
+              <cylinderGeometry
+                args={[hazard.radius, hazard.radius, 0.3, 32]}
+              />
+            );
+          } else if (hazard.type === "structural") {
+            return (
+              <boxGeometry
+                args={[hazard.radius * 1.5, 1.0, hazard.radius * 1.5]}
+              />
+            );
+          } else {
+            // Default for fire
+            return <sphereGeometry args={[hazard.radius, 32, 32]} />;
+          }
+        };
+
         return (
           <mesh key={idx} position={hazard.position}>
-            <sphereGeometry args={[hazard.radius, 32, 32]} />
+            {renderGeometry()}
             <meshStandardMaterial
               color={color}
               emissive={emissive}
               emissiveIntensity={0.6}
               transparent
-              opacity={Math.min(0.9, hazard.intensity * 0.9)}
+              opacity={opacity}
             />
           </mesh>
         );
@@ -193,6 +236,310 @@ function Agents({ agents }: { agents: Agent[] }) {
   );
 }
 
+// Add new component for environmental elements
+function EnvironmentElements({ hazards }: { hazards: Hazard[] }) {
+  return (
+    <>
+      {hazards
+        .filter((hazard) =>
+          [
+            "window",
+            "door",
+            "floor",
+            "ceiling",
+            "soil",
+            "grass",
+            "chair",
+            "table",
+          ].includes(hazard.type)
+        )
+        .map((hazard, idx) => {
+          const [x, y, z] = hazard.position;
+          const dimensions = hazard.dimensions || [1, 1];
+          const width = dimensions[0];
+          const length = dimensions[1];
+
+          // Determine material properties based on type
+          let color = "#ffffff";
+          let opacity = 1.0;
+          let emissive = "#000000";
+          let emissiveIntensity = 0;
+          let metalness = 0.0;
+          let roughness = 0.5;
+
+          // Calculate position and rotation based on element type
+          let positionY = z;
+          let rotationX = 0;
+          let rotationY = 0;
+          let rotationZ = 0;
+
+          if (hazard.type === "window") {
+            color = hazard.is_transparent ? "#a6d8ff" : "#d4f1f9";
+            opacity = hazard.is_transparent ? 0.3 : 0.8;
+            positionY = 1.5; // Position at standard window height
+            roughness = 0.2; // Smooth like glass
+          } else if (hazard.type === "door") {
+            color = "#8B4513"; // Brown for wooden door
+            positionY = 1.0; // Door height
+            // If door is open, rotate it
+            if (hazard.is_open) {
+              rotationY = Math.PI / 2; // 90 degree rotation
+            }
+          } else if (hazard.type === "floor") {
+            positionY = -0.05; // Just below ground level
+            rotationX = -Math.PI / 2; // Flat on ground
+
+            // Set floor texture color
+            if (hazard.texture === "wood") {
+              color = "#D2B48C";
+              roughness = 0.7;
+            } else if (hazard.texture === "concrete") {
+              color = "#C0C0C0";
+              roughness = 0.9;
+            } else if (hazard.texture === "carpet") {
+              color = "#607D8B";
+              roughness = 1.0;
+            } else {
+              // tiles
+              color = "#E0E0E0";
+              roughness = 0.4;
+            }
+          } else if (hazard.type === "ceiling") {
+            positionY = hazard.height || 3.0; // At ceiling height
+            rotationX = Math.PI / 2; // Flat on ceiling
+
+            if (hazard.texture === "exposed") {
+              color = "#696969";
+              roughness = 0.8;
+            } else if (hazard.texture === "tiles") {
+              color = "#F5F5F5";
+              roughness = 0.5;
+            } else {
+              // plaster
+              color = "#FFFFFF";
+              roughness = 0.3;
+            }
+          } else if (hazard.type === "soil") {
+            positionY = -0.1; // Below ground level
+            rotationX = -Math.PI / 2; // Flat on ground
+
+            if (hazard.texture === "clay") {
+              color = "#A52A2A";
+              roughness = 0.9;
+            } else if (hazard.texture === "sand") {
+              color = "#F4A460";
+              roughness = 1.0;
+            } else {
+              // dirt
+              color = "#8B4513";
+              roughness = 0.95;
+            }
+          } else if (hazard.type === "grass") {
+            positionY = 0.1; // Just above ground level
+            rotationX = -Math.PI / 2; // Flat on ground
+
+            if (hazard.texture === "tall_grass") {
+              color = "#228B22";
+              roughness = 1.0;
+            } else if (hazard.texture === "moss") {
+              color = "#2E8B57";
+              roughness = 0.9;
+            } else {
+              // regular grass
+              color = "#7CFC00";
+              roughness = 0.85;
+            }
+          } else if (hazard.type === "chair") {
+            positionY = hazard.radius / 2; // Half the height
+
+            // Set chair material/color based on texture
+            if (hazard.texture === "metal") {
+              color = "#A9A9A9";
+              metalness = 0.7;
+              roughness = 0.3;
+            } else if (hazard.texture === "plastic") {
+              color = "#1E90FF";
+              metalness = 0.1;
+              roughness = 0.9;
+            } else if (hazard.texture === "fabric") {
+              color = "#6495ED";
+              metalness = 0.0;
+              roughness = 1.0;
+            } else {
+              // wood
+              color = "#8B4513";
+              metalness = 0.1;
+              roughness = 0.8;
+            }
+          } else if (hazard.type === "table") {
+            positionY = hazard.radius / 2; // Half the height
+
+            // Set table material/color based on texture
+            if (hazard.texture === "metal") {
+              color = "#A9A9A9";
+              metalness = 0.7;
+              roughness = 0.3;
+            } else if (hazard.texture === "plastic") {
+              color = "#E0E0E0";
+              metalness = 0.1;
+              roughness = 0.9;
+            } else if (hazard.texture === "fabric") {
+              color = "#DEB887";
+              metalness = 0.0;
+              roughness = 1.0;
+            } else {
+              // wood
+              color = "#CD853F";
+              metalness = 0.1;
+              roughness = 0.8;
+            }
+          }
+
+          return (
+            <mesh
+              key={`env-${idx}`}
+              position={[x, positionY, y]}
+              rotation={new THREE.Euler(rotationX, rotationY, rotationZ)}
+            >
+              {["window", "door", "chair", "table"].includes(hazard.type) ? (
+                hazard.type === "chair" ? (
+                  // Chair geometry is a combination of box and legs
+                  <group>
+                    {/* Chair seat */}
+                    <mesh position={[0, 0.1, 0]}>
+                      <boxGeometry args={[width, 0.1, length]} />
+                      <meshStandardMaterial
+                        color={color}
+                        metalness={metalness}
+                        roughness={roughness}
+                      />
+                    </mesh>
+
+                    {/* Chair back */}
+                    <mesh
+                      position={[0, hazard.radius * 0.5, -length / 2 + 0.05]}
+                    >
+                      <boxGeometry args={[width, hazard.radius, 0.1]} />
+                      <meshStandardMaterial
+                        color={color}
+                        metalness={metalness}
+                        roughness={roughness}
+                      />
+                    </mesh>
+
+                    {/* Chair legs */}
+                    {[
+                      [
+                        width / 2 - 0.05,
+                        -hazard.radius * 0.3,
+                        length / 2 - 0.05,
+                      ] as [number, number, number],
+                      [
+                        width / 2 - 0.05,
+                        -hazard.radius * 0.3,
+                        -length / 2 + 0.05,
+                      ] as [number, number, number],
+                      [
+                        -width / 2 + 0.05,
+                        -hazard.radius * 0.3,
+                        length / 2 - 0.05,
+                      ] as [number, number, number],
+                      [
+                        -width / 2 + 0.05,
+                        -hazard.radius * 0.3,
+                        -length / 2 + 0.05,
+                      ] as [number, number, number],
+                    ].map((pos, legIdx) => (
+                      <mesh key={`leg-${legIdx}`} position={pos}>
+                        <cylinderGeometry
+                          args={[0.05, 0.05, hazard.radius * 0.6, 8]}
+                        />
+                        <meshStandardMaterial
+                          color={color}
+                          metalness={metalness}
+                          roughness={roughness}
+                        />
+                      </mesh>
+                    ))}
+                  </group>
+                ) : hazard.type === "table" ? (
+                  // Table geometry is a combination of tabletop and legs
+                  <group>
+                    {/* Table top */}
+                    <mesh position={[0, hazard.radius * 0.9, 0]}>
+                      <boxGeometry args={[width, 0.1, length]} />
+                      <meshStandardMaterial
+                        color={color}
+                        metalness={metalness}
+                        roughness={roughness}
+                      />
+                    </mesh>
+
+                    {/* Table legs */}
+                    {[
+                      [width / 2 - 0.1, 0, length / 2 - 0.1] as [
+                        number,
+                        number,
+                        number
+                      ],
+                      [width / 2 - 0.1, 0, -length / 2 + 0.1] as [
+                        number,
+                        number,
+                        number
+                      ],
+                      [-width / 2 + 0.1, 0, length / 2 - 0.1] as [
+                        number,
+                        number,
+                        number
+                      ],
+                      [-width / 2 + 0.1, 0, -length / 2 + 0.1] as [
+                        number,
+                        number,
+                        number
+                      ],
+                    ].map((pos, legIdx) => (
+                      <mesh key={`leg-${legIdx}`} position={pos}>
+                        <cylinderGeometry
+                          args={[0.08, 0.08, hazard.radius * 1.8, 8]}
+                        />
+                        <meshStandardMaterial
+                          color={color}
+                          metalness={metalness}
+                          roughness={roughness}
+                        />
+                      </mesh>
+                    ))}
+                  </group>
+                ) : (
+                  // Regular box geometry for windows and doors
+                  <boxGeometry args={[width, length, hazard.radius || 0.05]} />
+                )
+              ) : (
+                // Plane geometry for floor, ceiling, etc.
+                <planeGeometry args={[width, length, 10, 10]} />
+              )}
+
+              {/* Don't apply standard material to chairs and tables since they have their own */}
+              {!["chair", "table"].includes(hazard.type) && (
+                <meshStandardMaterial
+                  color={color}
+                  transparent={opacity < 1.0}
+                  opacity={opacity}
+                  emissive={emissive}
+                  emissiveIntensity={emissiveIntensity}
+                  metalness={metalness}
+                  roughness={roughness}
+                  side={THREE.DoubleSide}
+                />
+              )}
+            </mesh>
+          );
+        })}
+    </>
+  );
+}
+
+// Update the Scene component to include the new EnvironmentElements component
 function Scene({
   simulationData,
 }: {
@@ -208,7 +555,18 @@ function Scene({
         <>
           <Walls walls={simulationData.walls} />
           <Exits exits={simulationData.exits} />
-          <Hazards hazards={simulationData.hazards} />
+          <EnvironmentElements
+            hazards={simulationData.hazards.filter((h) =>
+              ["window", "door", "floor", "ceiling", "soil", "grass"].includes(
+                h.type
+              )
+            )}
+          />
+          <Hazards
+            hazards={simulationData.hazards.filter((h) =>
+              ["fire", "earthquake", "flood", "structural"].includes(h.type)
+            )}
+          />
           <Agents agents={simulationData.agents} />
 
           {/* Ground plane with visible grid */}
@@ -413,6 +771,63 @@ export default function MicroscopicView({
             <Box
               sx={{
                 width: 16,
+                height: 16,
+                backgroundColor: "#0099ff",
+                borderRadius: "50%",
+                mr: 1,
+                boxShadow: "0 0 3px #0099ff",
+              }}
+            />
+            <Typography variant="caption">Flood</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#8800bb",
+                borderRadius: "50%",
+                mr: 1,
+                boxShadow: "0 0 3px #aa66cc",
+              }}
+            />
+            <Typography variant="caption">Earthquake</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#aa6600",
+                borderRadius: "50%",
+                mr: 1,
+                boxShadow: "0 0 3px #cc8800",
+              }}
+            />
+            <Typography variant="caption">Structural Damage</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
                 height: 5,
                 backgroundColor: "#ffcc00",
                 mr: 1,
@@ -429,6 +844,109 @@ export default function MicroscopicView({
               }}
             />
             <Typography variant="caption">Velocity Vector</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#a6d8ff",
+                mr: 1,
+                opacity: 0.5,
+              }}
+            />
+            <Typography variant="caption">Window</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#8B4513",
+                mr: 1,
+              }}
+            />
+            <Typography variant="caption">Door</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#E0E0E0",
+                mr: 1,
+              }}
+            />
+            <Typography variant="caption">Floor</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#7CFC00",
+                mr: 1,
+              }}
+            />
+            <Typography variant="caption">Grass/Soil</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#8B4513",
+                mr: 1,
+              }}
+            />
+            <Typography variant="caption">Chair</Typography>
+          </Grid>
+
+          <Grid
+            item
+            xs={6}
+            md={3}
+            sx={{ display: "flex", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#CD853F",
+                mr: 1,
+              }}
+            />
+            <Typography variant="caption">Table</Typography>
           </Grid>
         </Grid>
       </Box>

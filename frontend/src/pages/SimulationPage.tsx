@@ -41,6 +41,26 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
+// Define a more comprehensive hazard type
+interface SimulationHazard {
+  position: number[];
+  type: string;
+  radius: number;
+  intensity: number;
+  dimensions?: [number, number];
+  is_transparent?: boolean;
+  is_open?: boolean;
+  texture?: string;
+  height?: number;
+  spread_rate?: number;
+  duration?: number;
+  aftershocks?: boolean;
+  rise_rate?: number;
+  flow_direction?: [number, number];
+  cause?: string;
+  is_debris?: boolean;
+}
+
 export default function SimulationPage() {
   const [loading, setLoading] = useState(false);
   const [scenarios, setScenarios] = useState<any[]>([]);
@@ -176,12 +196,24 @@ export default function SimulationPage() {
         }));
 
         // Transform hazards
-        const hazards = (scenarioData.hazards || []).map((hazard: any) => ({
-          position: [...hazard.position, 0], // Add z coordinate
-          type: hazard.type || "fire",
-          radius: hazard.radius || 2.0,
-          intensity: hazard.intensity || 1.0,
-        }));
+        const hazards = (scenarioData.hazards || []).map((hazard: any) => {
+          const baseHazard: SimulationHazard = {
+            position: [...hazard.position, 0], // Add z coordinate
+            type: hazard.type || "fire",
+            radius: hazard.radius || 2.0,
+            intensity: hazard.intensity || 1.0,
+          };
+
+          // Add environment-specific properties if they exist
+          if (hazard.dimensions) baseHazard.dimensions = hazard.dimensions;
+          if (hazard.is_transparent !== undefined)
+            baseHazard.is_transparent = hazard.is_transparent;
+          if (hazard.is_open !== undefined) baseHazard.is_open = hazard.is_open;
+          if (hazard.texture) baseHazard.texture = hazard.texture;
+          if (hazard.height) baseHazard.height = hazard.height;
+
+          return baseHazard;
+        });
 
         // Create agent data for each time step
         const numAgents = positionHistory[0].length;

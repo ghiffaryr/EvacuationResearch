@@ -21,6 +21,8 @@ interface MacroscopicViewProps {
     velocity_x: number[][][];
     velocity_y: number[][][];
     fire?: number[][][];
+    earthquake?: number[][][]; // Add earthquake field
+    flood?: number[][][]; // Add flood field
     evacuated_count?: number[];
     time_steps: number;
     grid_resolution: number;
@@ -28,6 +30,7 @@ interface MacroscopicViewProps {
     building_layout?: {
       walls: [[number, number], [number, number]][];
       exits: [number, number][];
+      hazards?: any[]; // Add hazards field to building_layout
     };
   };
   timeStep?: number;
@@ -183,11 +186,20 @@ function BuildingLayout({
 }
 
 // Component for visualizing fire in 3D with improved visibility
-function FireVisualization({ data }: { data: number[][] }) {
+function FireVisualization({
+  data,
+  color = "#ff3300", // Default fire color
+}: {
+  data: number[][];
+  color?: string;
+}) {
   const points: THREE.Vector3[] = [];
   const colors: THREE.Color[] = [];
 
-  // Create points for each fire location
+  // Create base color from the provided color parameter
+  const baseColor = new THREE.Color(color);
+
+  // Create points for each hazard location
   for (let y = 0; y < data.length; y++) {
     for (let x = 0; x < data[y].length; x++) {
       const intensity = data[y][x];
@@ -209,10 +221,11 @@ function FireVisualization({ data }: { data: number[][] }) {
             )
           );
 
-          // Color gradient from yellow to red based on height
-          const color = new THREE.Color();
-          color.setHSL(0.05 - intensity * 0.05, 1, 0.5 + height * 0.2);
-          colors.push(color);
+          // Create a color based on the base color but with variation for height
+          const newColor = baseColor
+            .clone()
+            .lerp(new THREE.Color("#ffffff"), height * 0.2);
+          colors.push(newColor);
         }
       }
     }
@@ -242,6 +255,265 @@ function FireVisualization({ data }: { data: number[][] }) {
   );
 }
 
+// Update the EnvironmentElements component for 3D view
+function EnvironmentElements({ hazards }: { hazards: any[] }) {
+  return (
+    <>
+      {hazards
+        .filter((hazard) =>
+          [
+            "window",
+            "door",
+            "floor",
+            "ceiling",
+            "soil",
+            "grass",
+            "chair",
+            "table",
+          ].includes(hazard.type)
+        )
+        .map((hazard, idx) => {
+          const { type, position, dimensions = [1, 1], texture = "" } = hazard;
+
+          let color = "#ffffff";
+          let opacity = 1.0;
+          let metalness = 0.0;
+          let roughness = 0.5;
+
+          // Determine material properties based on type
+          if (type === "window") {
+            color = hazard.is_transparent ? "#a6d8ff" : "#d4f1f9";
+            opacity = hazard.is_transparent ? 0.3 : 0.8;
+          } else if (type === "door") {
+            color = "#8B4513"; // Brown for wooden door
+          } else if (type === "floor") {
+            // Set floor texture color
+            if (texture === "wood") {
+              color = "#D2B48C";
+            } else if (texture === "concrete") {
+              color = "#C0C0C0";
+            } else if (texture === "carpet") {
+              color = "#607D8B";
+            } else {
+              // tiles
+              color = "#E0E0E0";
+            }
+          } else if (type === "ceiling") {
+            if (texture === "exposed") {
+              color = "#696969";
+            } else if (texture === "tiles") {
+              color = "#F5F5F5";
+            } else {
+              // plaster
+              color = "#FFFFFF";
+            }
+          } else if (type === "soil") {
+            if (texture === "clay") {
+              color = "#A52A2A";
+            } else if (texture === "sand") {
+              color = "#F4A460";
+            } else {
+              // dirt
+              color = "#8B4513";
+            }
+          } else if (type === "grass") {
+            if (texture === "tall_grass") {
+              color = "#228B22";
+            } else if (texture === "moss") {
+              color = "#2E8B57";
+            } else {
+              // regular grass
+              color = "#7CFC00";
+            }
+          } else if (type === "chair") {
+            if (texture === "metal") {
+              color = "#A9A9A9";
+              metalness = 0.7;
+              roughness = 0.3;
+            } else if (texture === "plastic") {
+              color = "#1E90FF";
+              metalness = 0.1;
+              roughness = 0.9;
+            } else if (texture === "fabric") {
+              color = "#6495ED";
+              metalness = 0.0;
+              roughness = 1.0;
+            } else {
+              // wood
+              color = "#8B4513";
+              metalness = 0.1;
+              roughness = 0.8;
+            }
+          } else if (type === "table") {
+            if (texture === "metal") {
+              color = "#A9A9A9";
+              metalness = 0.7;
+              roughness = 0.3;
+            } else if (texture === "plastic") {
+              color = "#E0E0E0";
+              metalness = 0.1;
+              roughness = 0.9;
+            } else if (texture === "fabric") {
+              color = "#DEB887";
+              metalness = 0.0;
+              roughness = 1.0;
+            } else {
+              // wood
+              color = "#CD853F";
+              metalness = 0.1;
+              roughness = 0.8;
+            }
+          }
+
+          // Calculate dimensions and position for rendering
+          const width = dimensions[0];
+          const length = dimensions[1];
+          const x = position[0] - 10;
+          const y = position[1] - 10;
+
+          // Determine rendering height based on type
+          let height = 0;
+          if (type === "window") height = 1.5;
+          else if (type === "door") height = 0.5;
+          else if (type === "ceiling") height = hazard.height || 3.0;
+          else if (type === "soil" || type === "grass") height = 0.1;
+          else if (type === "chair") height = 0.4;
+          else if (type === "table") height = 0.75;
+
+          if (type === "chair") {
+            return (
+              <group key={`chair-${idx}`} position={[x, 0, y]}>
+                {/* Chair seat */}
+                <mesh position={[0, 0.4, 0]}>
+                  <boxGeometry args={[width, 0.1, length]} />
+                  <meshStandardMaterial
+                    color={color}
+                    metalness={metalness}
+                    roughness={roughness}
+                  />
+                </mesh>
+
+                {/* Chair back */}
+                <mesh position={[0, 0.8, -length / 2 + 0.05]}>
+                  <boxGeometry args={[width, 0.8, 0.1]} />
+                  <meshStandardMaterial
+                    color={color}
+                    metalness={metalness}
+                    roughness={roughness}
+                  />
+                </mesh>
+
+                {/* Chair legs */}
+                {[
+                  [width / 2 - 0.05, 0.2, length / 2 - 0.05] as [
+                    number,
+                    number,
+                    number
+                  ],
+                  [width / 2 - 0.05, 0.2, -length / 2 + 0.05] as [
+                    number,
+                    number,
+                    number
+                  ],
+                  [-width / 2 + 0.05, 0.2, length / 2 - 0.05] as [
+                    number,
+                    number,
+                    number
+                  ],
+                  [-width / 2 + 0.05, 0.2, -length / 2 + 0.05] as [
+                    number,
+                    number,
+                    number
+                  ],
+                ].map((pos, legIdx) => (
+                  <mesh key={`leg-${legIdx}`} position={pos}>
+                    <cylinderGeometry args={[0.05, 0.05, 0.4, 8]} />
+                    <meshStandardMaterial
+                      color={color}
+                      metalness={metalness}
+                      roughness={roughness}
+                    />
+                  </mesh>
+                ))}
+              </group>
+            );
+          } else if (type === "table") {
+            return (
+              <group key={`table-${idx}`} position={[x, 0, y]}>
+                {/* Table top */}
+                <mesh position={[0, height, 0]}>
+                  <boxGeometry args={[width, 0.1, length]} />
+                  <meshStandardMaterial
+                    color={color}
+                    metalness={metalness}
+                    roughness={roughness}
+                  />
+                </mesh>
+
+                {/* Table legs */}
+                {[
+                  [width / 2 - 0.1, height / 2, length / 2 - 0.1] as [
+                    number,
+                    number,
+                    number
+                  ],
+                  [width / 2 - 0.1, height / 2, -length / 2 + 0.1] as [
+                    number,
+                    number,
+                    number
+                  ],
+                  [-width / 2 + 0.1, height / 2, length / 2 - 0.1] as [
+                    number,
+                    number,
+                    number
+                  ],
+                  [-width / 2 + 0.1, height / 2, -length / 2 + 0.1] as [
+                    number,
+                    number,
+                    number
+                  ],
+                ].map((pos, legIdx) => (
+                  <mesh key={`leg-${legIdx}`} position={pos}>
+                    <cylinderGeometry args={[0.08, 0.08, height, 8]} />
+                    <meshStandardMaterial
+                      color={color}
+                      metalness={metalness}
+                      roughness={roughness}
+                    />
+                  </mesh>
+                ))}
+              </group>
+            );
+          }
+          // Different geometry types for different elements
+          if (["window", "door"].includes(type)) {
+            return (
+              <mesh key={`env-${idx}`} position={[x, height, y]}>
+                <boxGeometry args={[width, 0.1, length]} />
+                <meshStandardMaterial
+                  color={color}
+                  transparent={opacity < 1.0}
+                  opacity={opacity}
+                />
+              </mesh>
+            );
+          } else {
+            return (
+              <mesh
+                key={`env-${idx}`}
+                position={[x, height, y]}
+                rotation={[-Math.PI / 2, 0, 0]}
+              >
+                <planeGeometry args={[width, length]} />
+                <meshStandardMaterial color={color} side={THREE.DoubleSide} />
+              </mesh>
+            );
+          }
+        })}
+    </>
+  );
+}
+
 export default function MacroscopicView({
   simulationData,
   timeStep = 0,
@@ -250,9 +522,9 @@ export default function MacroscopicView({
   const [localTimeStep, setLocalTimeStep] = useState(timeStep);
   const [isPlaying, setIsPlaying] = useState(false);
   const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
-  const [visLayer, setVisLayer] = useState<"density" | "velocity" | "fire">(
-    "density"
-  );
+  const [visLayer, setVisLayer] = useState<
+    "density" | "velocity" | "fire" | "earthquake" | "flood"
+  >("density");
   const svgRef = useRef<SVGSVGElement | null>(null);
   const animationRef = useRef<number>();
   const lastUpdateTimeRef = useRef<number>(0);
@@ -674,7 +946,7 @@ export default function MacroscopicView({
 
   const handleVisLayerChange = (
     _: React.MouseEvent<HTMLElement>,
-    newLayer: "density" | "velocity" | "fire" | null
+    newLayer: "density" | "velocity" | "fire" | "earthquake" | "flood" | null
   ) => {
     if (newLayer !== null) {
       setVisLayer(newLayer);
@@ -872,6 +1144,12 @@ export default function MacroscopicView({
             {simulationData.fire && (
               <ToggleButton value="fire">Fire</ToggleButton>
             )}
+            {simulationData.earthquake && (
+              <ToggleButton value="earthquake">Earthquake</ToggleButton>
+            )}
+            {simulationData.flood && (
+              <ToggleButton value="flood">Flood</ToggleButton>
+            )}
           </ToggleButtonGroup>
         </Grid>
       </Grid>
@@ -898,8 +1176,33 @@ export default function MacroscopicView({
             )}
 
             {visLayer === "fire" && simulationData.fire && (
-              <FireVisualization data={simulationData.fire[localTimeStep]} />
+              <FireVisualization
+                data={simulationData.fire[localTimeStep]}
+                color="#ff3300"
+              />
             )}
+
+            {visLayer === "earthquake" && simulationData.earthquake && (
+              <FireVisualization
+                data={simulationData.earthquake[localTimeStep]}
+                color="#8800bb"
+              />
+            )}
+
+            {visLayer === "flood" && simulationData.flood && (
+              <FireVisualization
+                data={simulationData.flood[localTimeStep]}
+                color="#0066ff"
+              />
+            )}
+
+            {/* Add environment elements visualization */}
+            {simulationData.building_layout &&
+              simulationData.building_layout.hazards && (
+                <EnvironmentElements
+                  hazards={simulationData.building_layout.hazards}
+                />
+              )}
 
             {/* Building layout */}
             {simulationData.building_layout && (

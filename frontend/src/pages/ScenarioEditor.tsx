@@ -8,6 +8,7 @@ import {
   TextField,
   Button,
   FormControl,
+  FormControlLabel, // Added import
   InputLabel,
   Select,
   MenuItem,
@@ -27,6 +28,7 @@ import {
   Card,
   CardContent,
   CardActions,
+  Switch, // Added import
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -61,11 +63,24 @@ function TabPanel(props: TabPanelProps) {
 type Wall = [[number, number], [number, number]];
 type Exit = [number, number];
 type InitialPosition = { x: number; y: number; count: number };
+// Update the Hazard type to include multi-hazard parameters and environmental elements
 type Hazard = {
   position: [number, number];
   type: string;
   radius: number;
   intensity: number;
+  spread_rate?: number; // Fire-specific
+  duration?: number; // Earthquake-specific
+  aftershocks?: boolean; // Earthquake-specific
+  rise_rate?: number; // Flood-specific
+  flow_direction?: [number, number]; // Flood-specific
+  cause?: string; // Optional cause of hazard
+  is_debris?: boolean; // For structural damage
+  dimensions?: [number, number]; // For windows, doors, floors, ceilings
+  is_transparent?: boolean; // For windows
+  is_open?: boolean; // For doors
+  texture?: string; // For floors, ceilings, soil, grass
+  height?: number; // For ceilings, soil level
 };
 
 export default function ScenarioEditor() {
@@ -110,6 +125,7 @@ export default function ScenarioEditor() {
     type: "fire",
     radius: 2.0,
     intensity: 1.0,
+    spread_rate: 0.02, // Default fire spread rate
   });
 
   // Dialog state
@@ -304,6 +320,7 @@ export default function ScenarioEditor() {
       type: "fire",
       radius: 2.0,
       intensity: 1.0,
+      spread_rate: 0.02, // Default fire spread rate
     });
   };
 
@@ -769,16 +786,88 @@ export default function ScenarioEditor() {
                     <Select
                       value={newHazard.type}
                       label="Hazard Type"
-                      onChange={(e) =>
-                        setNewHazard({
+                      onChange={(e) => {
+                        // Set type-specific default values when changing hazard type
+                        const hazardType = e.target.value;
+                        let updatedHazard = {
                           ...newHazard,
-                          type: e.target.value,
-                        })
-                      }
+                          type: hazardType,
+                        };
+
+                        // Clear previous type-specific params
+                        delete updatedHazard.spread_rate;
+                        delete updatedHazard.duration;
+                        delete updatedHazard.aftershocks;
+                        delete updatedHazard.rise_rate;
+                        delete updatedHazard.flow_direction;
+                        delete updatedHazard.is_debris;
+                        delete updatedHazard.dimensions;
+                        delete updatedHazard.is_transparent;
+                        delete updatedHazard.is_open;
+                        delete updatedHazard.texture;
+                        delete updatedHazard.height;
+
+                        // Set new type-specific params
+                        if (hazardType === "fire") {
+                          updatedHazard.spread_rate = 0.02;
+                        } else if (hazardType === "earthquake") {
+                          updatedHazard.duration = 15;
+                          updatedHazard.aftershocks = false;
+                        } else if (hazardType === "flood") {
+                          updatedHazard.rise_rate = 0.05;
+                          updatedHazard.flow_direction = [1, 0];
+                        } else if (hazardType === "structural") {
+                          updatedHazard.is_debris = true;
+                        } else if (hazardType === "window") {
+                          updatedHazard.dimensions = [2.0, 2.0];
+                          updatedHazard.is_transparent = true;
+                          updatedHazard.radius = 0.5; // Convert to thickness for rendering
+                        } else if (hazardType === "door") {
+                          updatedHazard.dimensions = [1.0, 2.0];
+                          updatedHazard.is_open = false;
+                          updatedHazard.radius = 0.5; // Convert to thickness for rendering
+                        } else if (hazardType === "floor") {
+                          updatedHazard.dimensions = [10.0, 10.0];
+                          updatedHazard.texture = "tiles";
+                          updatedHazard.radius = 0.1; // Convert to thickness for rendering
+                        } else if (hazardType === "ceiling") {
+                          updatedHazard.dimensions = [10.0, 10.0];
+                          updatedHazard.height = 3.0;
+                          updatedHazard.texture = "plaster";
+                          updatedHazard.radius = 0.1; // Convert to thickness for rendering
+                        } else if (hazardType === "soil") {
+                          updatedHazard.dimensions = [5.0, 5.0];
+                          updatedHazard.texture = "dirt";
+                          updatedHazard.radius = 0.5; // Convert to depth for rendering
+                        } else if (hazardType === "grass") {
+                          updatedHazard.dimensions = [5.0, 5.0];
+                          updatedHazard.texture = "grass";
+                          updatedHazard.radius = 0.2; // Convert to height for rendering
+                        } else if (hazardType === "chair") {
+                          updatedHazard.dimensions = [0.5, 0.5];
+                          updatedHazard.texture = "wood";
+                          updatedHazard.radius = 0.8; // Chair height
+                        } else if (hazardType === "table") {
+                          updatedHazard.dimensions = [1.2, 0.8];
+                          updatedHazard.texture = "wood";
+                          updatedHazard.radius = 0.75; // Table height
+                        }
+
+                        setNewHazard(updatedHazard);
+                      }}
                     >
                       <MenuItem value="fire">Fire</MenuItem>
-                      <MenuItem value="water">Flood Water</MenuItem>
+                      <MenuItem value="earthquake">Earthquake</MenuItem>
+                      <MenuItem value="flood">Flood</MenuItem>
                       <MenuItem value="structural">Structural Damage</MenuItem>
+                      <MenuItem value="window">Window</MenuItem>
+                      <MenuItem value="door">Door</MenuItem>
+                      <MenuItem value="floor">Floor</MenuItem>
+                      <MenuItem value="ceiling">Ceiling</MenuItem>
+                      <MenuItem value="soil">Soil</MenuItem>
+                      <MenuItem value="grass">Grass</MenuItem>
+                      <MenuItem value="chair">Chair</MenuItem>
+                      <MenuItem value="table">Table</MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
@@ -812,6 +901,161 @@ export default function ScenarioEditor() {
                     inputProps={{ step: "0.1", min: "0", max: "1" }}
                   />
                 </Grid>
+
+                {/* Fire-specific parameters */}
+                {newHazard.type === "fire" && (
+                  <Grid item xs={12}>
+                    <TextField
+                      label="Spread Rate"
+                      type="number"
+                      fullWidth
+                      value={newHazard.spread_rate || 0.02}
+                      onChange={(e) =>
+                        setNewHazard({
+                          ...newHazard,
+                          spread_rate: parseFloat(e.target.value) || 0.02,
+                        })
+                      }
+                      inputProps={{ step: "0.01", min: "0", max: "0.1" }}
+                      helperText="How quickly the fire spreads (0.01-0.1)"
+                    />
+                  </Grid>
+                )}
+
+                {/* Earthquake-specific parameters */}
+                {newHazard.type === "earthquake" && (
+                  <>
+                    <Grid item xs={6}>
+                      <TextField
+                        label="Duration"
+                        type="number"
+                        fullWidth
+                        value={newHazard.duration || 15}
+                        onChange={(e) =>
+                          setNewHazard({
+                            ...newHazard,
+                            duration: parseInt(e.target.value) || 15,
+                          })
+                        }
+                        inputProps={{ step: "1", min: "1" }}
+                        helperText="Duration in time steps"
+                      />
+                    </Grid>
+                    <Grid item xs={6}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={newHazard.aftershocks || false}
+                            onChange={(
+                              e: React.ChangeEvent<HTMLInputElement> // Add explicit type
+                            ) =>
+                              setNewHazard({
+                                ...newHazard,
+                                aftershocks: e.target.checked,
+                              })
+                            }
+                          />
+                        }
+                        label="Include Aftershocks"
+                      />
+                    </Grid>
+                  </>
+                )}
+
+                {/* Flood-specific parameters */}
+                {newHazard.type === "flood" && (
+                  <>
+                    <Grid item xs={6}>
+                      <TextField
+                        label="Rise Rate"
+                        type="number"
+                        fullWidth
+                        value={newHazard.rise_rate || 0.05}
+                        onChange={(e) =>
+                          setNewHazard({
+                            ...newHazard,
+                            rise_rate: parseFloat(e.target.value) || 0.05,
+                          })
+                        }
+                        inputProps={{ step: "0.01", min: "0", max: "0.2" }}
+                        helperText="Water rise rate (0.01-0.2)"
+                      />
+                    </Grid>
+                    <Grid item xs={6}>
+                      <FormControl fullWidth>
+                        <InputLabel>Flow Direction</InputLabel>
+                        <Select
+                          value={
+                            newHazard.flow_direction
+                              ? JSON.stringify(newHazard.flow_direction)
+                              : "[1,0]"
+                          }
+                          label="Flow Direction"
+                          onChange={(e) => {
+                            setNewHazard({
+                              ...newHazard,
+                              flow_direction: JSON.parse(e.target.value),
+                            });
+                          }}
+                        >
+                          <MenuItem value="[1,0]">East →</MenuItem>
+                          <MenuItem value="[1,1]">Southeast ↘</MenuItem>
+                          <MenuItem value="[0,1]">South ↓</MenuItem>
+                          <MenuItem value="[-1,1]">Southwest ↙</MenuItem>
+                          <MenuItem value="[-1,0]">West ←</MenuItem>
+                          <MenuItem value="[-1,-1]">Northwest ↖</MenuItem>
+                          <MenuItem value="[0,-1]">North ↑</MenuItem>
+                          <MenuItem value="[1,-1]">Northeast ↗</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  </>
+                )}
+
+                {/* Structural damage specific parameter */}
+                {newHazard.type === "structural" && (
+                  <Grid item xs={12}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={newHazard.is_debris || true}
+                          onChange={(
+                            e: React.ChangeEvent<HTMLInputElement> // Add explicit type
+                          ) =>
+                            setNewHazard({
+                              ...newHazard,
+                              is_debris: e.target.checked,
+                            })
+                          }
+                        />
+                      }
+                      label="Contains Debris"
+                    />
+                  </Grid>
+                )}
+
+                {/* Optional cause field for any hazard */}
+                <Grid item xs={12}>
+                  <FormControl fullWidth>
+                    <InputLabel>Cause (Optional)</InputLabel>
+                    <Select
+                      value={newHazard.cause || ""}
+                      label="Cause (Optional)"
+                      onChange={(e) => {
+                        setNewHazard({
+                          ...newHazard,
+                          cause: e.target.value,
+                        });
+                      }}
+                    >
+                      <MenuItem value="">None</MenuItem>
+                      <MenuItem value="earthquake">Earthquake</MenuItem>
+                      <MenuItem value="broken_pipes">Broken Pipes</MenuItem>
+                      <MenuItem value="electrical">Electrical Failure</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+
                 <Grid item xs={12}>
                   <Button
                     variant="outlined"
@@ -846,8 +1090,45 @@ export default function ScenarioEditor() {
                       primary={`${
                         hazard.type.charAt(0).toUpperCase() +
                         hazard.type.slice(1)
-                      } Hazard`}
-                      secondary={`Position: (${hazard.position[0]}, ${hazard.position[1]}), Radius: ${hazard.radius}, Intensity: ${hazard.intensity}`}
+                      }`}
+                      secondary={
+                        <>
+                          Position: ({hazard.position[0]}, {hazard.position[1]})
+                          {hazard.dimensions &&
+                            `, Size: ${hazard.dimensions[0]} × ${hazard.dimensions[1]}`}
+                          {[
+                            "fire",
+                            "earthquake",
+                            "flood",
+                            "structural",
+                          ].includes(hazard.type) && (
+                            <>
+                              , Radius: {hazard.radius}, Intensity:{" "}
+                              {hazard.intensity}
+                            </>
+                          )}
+                          {hazard.type === "fire" &&
+                            hazard.spread_rate &&
+                            `, Spread: ${hazard.spread_rate}`}
+                          {hazard.type === "earthquake" &&
+                            hazard.duration &&
+                            `, Duration: ${hazard.duration}${
+                              hazard.aftershocks ? " (with aftershocks)" : ""
+                            }`}
+                          {hazard.type === "flood" &&
+                            hazard.rise_rate &&
+                            `, Rise Rate: ${hazard.rise_rate}`}
+                          {hazard.type === "window" &&
+                            `, ${
+                              hazard.is_transparent ? "Transparent" : "Opaque"
+                            }`}
+                          {hazard.type === "door" &&
+                            `, ${hazard.is_open ? "Open" : "Closed"}`}
+                          {hazard.texture && `, Texture: ${hazard.texture}`}
+                          {hazard.height && `, Height: ${hazard.height}m`}
+                          {hazard.cause && `, Cause: ${hazard.cause}`}
+                        </>
+                      }
                     />
                   </ListItem>
                 ))}
