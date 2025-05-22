@@ -1,15 +1,34 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import {
+  OrbitControls,
+  FlyControls,
+  FirstPersonControls,
+  PointerLockControls,
+} from "@react-three/drei";
 import {
   Box,
-  Button,
   Slider,
   Typography,
   Paper,
   Grid,
-  Divider,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  IconButton,
+  Collapse,
+  Card,
+  CardContent,
 } from "@mui/material";
+import {
+  PlayArrow,
+  Pause,
+  Fullscreen,
+  FullscreenExit,
+  ExpandMore,
+  ExpandLess,
+  Settings,
+} from "@mui/icons-material";
 import * as THREE from "three";
 
 interface Agent {
@@ -539,15 +558,17 @@ function EnvironmentElements({ hazards }: { hazards: Hazard[] }) {
   );
 }
 
-// Update the Scene component to include the new EnvironmentElements component
+// Update the Scene component to include camera controls based on mode
 function Scene({
   simulationData,
+  cameraControlMode,
 }: {
   simulationData?: MicroscopicViewProps["simulationData"];
+  cameraControlMode: string;
 }) {
   return (
     <>
-      <ambientLight intensity={0.7} /> {/* Brighter ambient light */}
+      <ambientLight intensity={0.7} />
       <pointLight position={[10, 10, 10]} intensity={0.8} />
       <pointLight position={[-10, 10, -10]} intensity={0.5} color="#f0f0ff" />
       {/* Display simulation elements if data is available */}
@@ -572,7 +593,7 @@ function Scene({
           {/* Ground plane with visible grid */}
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
             <planeGeometry args={[50, 50]} />
-            <meshStandardMaterial color="#f0f0f0" /> {/* Light gray floor */}
+            <meshStandardMaterial color="#f0f0f0" />
           </mesh>
 
           {/* Add visible grid and axes for better spatial reference */}
@@ -583,6 +604,21 @@ function Scene({
 
           {/* Add coordinate axes */}
           <axesHelper args={[10]} position={[-20, -0.4, -20]} />
+
+          {/* Render appropriate camera controls based on mode */}
+          {cameraControlMode === "orbit" && <OrbitControls />}
+          {cameraControlMode === "fly" && (
+            <FlyControls movementSpeed={10} rollSpeed={0.1} dragToLook={true} />
+          )}
+          {cameraControlMode === "firstPerson" && (
+            <FirstPersonControls
+              lookSpeed={0.1}
+              movementSpeed={5}
+              heightCoef={1}
+              lookVertical={true}
+            />
+          )}
+          {cameraControlMode === "pointerLock" && <PointerLockControls />}
         </>
       )}
     </>
@@ -598,7 +634,20 @@ export default function MicroscopicView({
   const animationRef = useRef<number>();
   const lastUpdateTimeRef = useRef<number>(0);
   const totalTimeSteps = simulationData?.totalTimeSteps || 100;
+  const [cameraControlMode, setCameraControlMode] = useState<string>("orbit");
 
+  // Add refs and states for new functionality
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showLegend, setShowLegend] = useState(true);
+  const [showControls, setShowControls] = useState(true);
+
+  // Handle play/pause toggle
+  const handlePlayPause = useCallback(() => {
+    setIsPlaying((prev) => !prev);
+  }, []);
+
+  // Use provided timeStep if it's controlled from parent or handle animation
   useEffect(() => {
     if (!isPlaying) {
       if (animationRef.current) {
@@ -636,337 +685,540 @@ export default function MicroscopicView({
     if (onTimeStepChange) onTimeStepChange(newTimeStep);
   };
 
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
+  // Add handler for camera control mode change
+  const handleCameraControlChange = (
+    _: React.MouseEvent<HTMLElement>,
+    newMode: string | null
+  ) => {
+    if (newMode !== null) {
+      setCameraControlMode(newMode);
+    }
   };
+
+  // Helper function to get control instructions
+  const getCameraControlInstructions = () => {
+    switch (cameraControlMode) {
+      case "orbit":
+        return "Left click & drag to rotate, right click & drag to pan, scroll to zoom";
+      case "fly":
+        return "WASD to move, R/F to up/down, Q/E to roll, drag mouse to look";
+      case "firstPerson":
+        return "WASD to move, mouse to look around";
+      case "pointerLock":
+        return "Click to activate. Mouse to look. ESC to exit";
+      default:
+        return "";
+    }
+  };
+
+  // Add fullscreen toggle functionality
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      if (
+        canvasContainerRef.current &&
+        canvasContainerRef.current.requestFullscreen
+      ) {
+        canvasContainerRef.current.requestFullscreen().catch((err) => {
+          console.error(
+            `Error attempting to enable fullscreen: ${err.message}`
+          );
+        });
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
+
+  // Listen for fullscreen change events
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  // Fix keyboard controls - only intercept SPACE key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only intercept space key, let other keys pass through to FPS controls
+      if (e.code === "Space") {
+        e.preventDefault(); // Prevent scrolling
+        handlePlayPause();
+      }
+      // Important: We don't handle WASD keys here, so they can be used by the camera controls
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [handlePlayPause]);
 
   return (
     <Paper
       elevation={3}
-      sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column" }}
+      sx={{
+        p: 2,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+      }}
     >
-      <Typography variant="h6" gutterBottom>
-        Microscopic Simulation
-        <Typography
-          component="span"
-          variant="subtitle2"
-          sx={{ ml: 1, color: "text.secondary" }}
-        >
-          (Agent-Based Model)
-        </Typography>
-      </Typography>
-
-      {/* Comprehensive legend with all simulation elements */}
       <Box
         sx={{
-          mb: 2,
-          p: 1,
-          border: "1px solid #e0e0e0",
-          borderRadius: 1,
-          bgcolor: "#f9f9f9",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 1,
         }}
       >
-        <Typography variant="subtitle2" gutterBottom>
-          Legend:
+        <Typography variant="h6">
+          Microscopic Simulation
+          <Typography
+            component="span"
+            variant="subtitle2"
+            sx={{ ml: 1, color: "text.secondary" }}
+          >
+            (Agent-Based Model)
+          </Typography>
         </Typography>
-        <Grid container spacing={2}>
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#0077ff",
-                borderRadius: "50%",
-                mr: 1,
-                boxShadow: "0 0 3px #0077ff",
-              }}
-            />
-            <Typography variant="caption">Active Agent</Typography>
-          </Grid>
 
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
+        <Box>
+          <IconButton
+            onClick={toggleFullscreen}
+            size="small"
+            title="Toggle fullscreen"
           >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#00cc44",
-                borderRadius: "50%",
-                mr: 1,
-                boxShadow: "0 0 3px #00cc44",
-              }}
-            />
-            <Typography variant="caption">Evacuated Agent</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
+            {isFullscreen ? <FullscreenExit /> : <Fullscreen />}
+          </IconButton>
+          <IconButton
+            onClick={() => setShowLegend((prev) => !prev)}
+            size="small"
+            title="Toggle legend"
           >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#222222",
-                mr: 1,
-              }}
-            />
-            <Typography variant="caption">Wall</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
+            {showLegend ? <ExpandLess /> : <ExpandMore />}
+          </IconButton>
+          <IconButton
+            onClick={() => setShowControls((prev) => !prev)}
+            size="small"
+            title="Toggle controls"
           >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#00aa00",
-                mr: 1,
-                boxShadow: "0 0 3px #00ff00",
-              }}
-            />
-            <Typography variant="caption">Exit</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#ff3300",
-                borderRadius: "50%",
-                mr: 1,
-                boxShadow: "0 0 3px #ff6600",
-              }}
-            />
-            <Typography variant="caption">Fire Hazard</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#0099ff",
-                borderRadius: "50%",
-                mr: 1,
-                boxShadow: "0 0 3px #0099ff",
-              }}
-            />
-            <Typography variant="caption">Flood</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#8800bb",
-                borderRadius: "50%",
-                mr: 1,
-                boxShadow: "0 0 3px #aa66cc",
-              }}
-            />
-            <Typography variant="caption">Earthquake</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#aa6600",
-                borderRadius: "50%",
-                mr: 1,
-                boxShadow: "0 0 3px #cc8800",
-              }}
-            />
-            <Typography variant="caption">Structural Damage</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 5,
-                backgroundColor: "#ffcc00",
-                mr: 1,
-                position: "relative",
-                "&::after": {
-                  content: '""',
-                  position: "absolute",
-                  right: -8,
-                  top: -3,
-                  borderLeft: "8px solid #ffcc00",
-                  borderTop: "5px solid transparent",
-                  borderBottom: "5px solid transparent",
-                },
-              }}
-            />
-            <Typography variant="caption">Velocity Vector</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#a6d8ff",
-                mr: 1,
-                opacity: 0.5,
-              }}
-            />
-            <Typography variant="caption">Window</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#8B4513",
-                mr: 1,
-              }}
-            />
-            <Typography variant="caption">Door</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#E0E0E0",
-                mr: 1,
-              }}
-            />
-            <Typography variant="caption">Floor</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#7CFC00",
-                mr: 1,
-              }}
-            />
-            <Typography variant="caption">Grass/Soil</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#8B4513",
-                mr: 1,
-              }}
-            />
-            <Typography variant="caption">Chair</Typography>
-          </Grid>
-
-          <Grid
-            item
-            xs={6}
-            md={3}
-            sx={{ display: "flex", alignItems: "center" }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 16,
-                backgroundColor: "#CD853F",
-                mr: 1,
-              }}
-            />
-            <Typography variant="caption">Table</Typography>
-          </Grid>
-        </Grid>
+            <Settings />
+          </IconButton>
+        </Box>
       </Box>
 
-      <Divider sx={{ mb: 2 }} />
+      {/* Fixed layout to ensure proper content separation */}
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {/* Controls panel */}
+        <Collapse in={showControls}>
+          <Card variant="outlined" sx={{ backgroundColor: "#f5f5f5" }}>
+            <CardContent sx={{ py: 1 }}>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2">Camera Mode:</Typography>
+                  <ToggleButtonGroup
+                    value={cameraControlMode}
+                    exclusive
+                    onChange={handleCameraControlChange}
+                    size="small"
+                    aria-label="camera control mode"
+                  >
+                    <ToggleButton value="orbit">
+                      <Tooltip title="Orbit around center point">
+                        <span>Orbit</span>
+                      </Tooltip>
+                    </ToggleButton>
+                    <ToggleButton value="fly">
+                      <Tooltip title="Free flying camera">
+                        <span>Fly</span>
+                      </Tooltip>
+                    </ToggleButton>
+                    <ToggleButton value="firstPerson">
+                      <Tooltip title="First person walker">
+                        <span>Walk</span>
+                      </Tooltip>
+                    </ToggleButton>
+                    <ToggleButton value="pointerLock">
+                      <Tooltip title="FPS-style controls">
+                        <span>FPS</span>
+                      </Tooltip>
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="caption" color="text.secondary">
+                    {getCameraControlInstructions()}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 0.5 }}
+                  >
+                    Press <b>Space</b> to play/pause simulation
+                  </Typography>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Collapse>
 
-      <Box sx={{ height: 500, mb: 2 }}>
+        {/* Legend with full visibility without scrolling */}
+        <Collapse in={showLegend}>
+          <Card variant="outlined" sx={{ backgroundColor: "#f9f9f9" }}>
+            <CardContent sx={{ py: 1 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Legend:
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#0077ff",
+                      borderRadius: "50%",
+                      mr: 1,
+                      boxShadow: "0 0 3px #0077ff",
+                    }}
+                  />
+                  <Typography variant="caption">Active Agent</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#00cc44",
+                      borderRadius: "50%",
+                      mr: 1,
+                      boxShadow: "0 0 3px #00cc44",
+                    }}
+                  />
+                  <Typography variant="caption">Evacuated Agent</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#222222",
+                      mr: 1,
+                    }}
+                  />
+                  <Typography variant="caption">Wall</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#00aa00",
+                      mr: 1,
+                      boxShadow: "0 0 3px #00ff00",
+                    }}
+                  />
+                  <Typography variant="caption">Exit</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#ff3300",
+                      borderRadius: "50%",
+                      mr: 1,
+                      boxShadow: "0 0 3px #ff6600",
+                    }}
+                  />
+                  <Typography variant="caption">Fire Hazard</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#0099ff",
+                      borderRadius: "50%",
+                      mr: 1,
+                      boxShadow: "0 0 3px #0099ff",
+                    }}
+                  />
+                  <Typography variant="caption">Flood</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#8800bb",
+                      borderRadius: "50%",
+                      mr: 1,
+                      boxShadow: "0 0 3px #aa66cc",
+                    }}
+                  />
+                  <Typography variant="caption">Earthquake</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#aa6600",
+                      borderRadius: "50%",
+                      mr: 1,
+                      boxShadow: "0 0 3px #cc8800",
+                    }}
+                  />
+                  <Typography variant="caption">Structural Damage</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 5,
+                      backgroundColor: "#ffcc00",
+                      mr: 1,
+                      position: "relative",
+                      "&::after": {
+                        content: '""',
+                        position: "absolute",
+                        right: -8,
+                        top: -3,
+                        borderLeft: "8px solid #ffcc00",
+                        borderTop: "5px solid transparent",
+                        borderBottom: "5px solid transparent",
+                      },
+                    }}
+                  />
+                  <Typography variant="caption">Velocity Vector</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#a6d8ff",
+                      mr: 1,
+                      opacity: 0.5,
+                    }}
+                  />
+                  <Typography variant="caption">Window</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#8B4513",
+                      mr: 1,
+                    }}
+                  />
+                  <Typography variant="caption">Door</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#E0E0E0",
+                      mr: 1,
+                    }}
+                  />
+                  <Typography variant="caption">Floor</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#7CFC00",
+                      mr: 1,
+                    }}
+                  />
+                  <Typography variant="caption">Grass/Soil</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#8B4513",
+                      mr: 1,
+                    }}
+                  />
+                  <Typography variant="caption">Chair</Typography>
+                </Grid>
+
+                <Grid
+                  item
+                  xs={6}
+                  md={3}
+                  sx={{ display: "flex", alignItems: "center" }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      backgroundColor: "#CD853F",
+                      mr: 1,
+                    }}
+                  />
+                  <Typography variant="caption">Table</Typography>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Collapse>
+      </Box>
+
+      {/* Main 3D view area */}
+      <Box
+        ref={canvasContainerRef}
+        sx={{
+          flexGrow: 1,
+          height: isFullscreen ? "100vh" : "60vh",
+          position: "relative",
+          mt: 2,
+          mb: 1,
+          border: "1px solid #ddd",
+          borderRadius: 1,
+          overflow: "hidden",
+        }}
+      >
         <Canvas camera={{ position: [0, 10, 20], fov: 60 }}>
-          <Scene simulationData={simulationData} />
-          <OrbitControls />
+          <Scene
+            simulationData={simulationData}
+            cameraControlMode={cameraControlMode}
+          />
         </Canvas>
+
+        {/* Play/Pause overlay button - only visible in fullscreen mode */}
+        {isFullscreen && (
+          <Box
+            sx={{
+              position: "absolute",
+              bottom: 16,
+              left: 16,
+              bgcolor: "rgba(255,255,255,0.7)",
+              borderRadius: "50%",
+              zIndex: 100,
+            }}
+          >
+            <IconButton
+              onClick={handlePlayPause}
+              size="large"
+              sx={{
+                color: isPlaying ? "primary.main" : "action.active",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.9)" },
+              }}
+            >
+              {isPlaying ? <Pause /> : <PlayArrow />}
+            </IconButton>
+          </Box>
+        )}
       </Box>
 
-      <Grid container spacing={2} alignItems="center">
-        <Grid item xs={2}>
-          <Button variant="contained" onClick={handlePlayPause}>
-            {isPlaying ? "Pause" : "Play"}
-          </Button>
+      {/* Timeline controls - always visible */}
+      <Grid container spacing={2} alignItems="center" sx={{ mt: 1 }}>
+        <Grid item xs={1}>
+          <IconButton
+            onClick={handlePlayPause}
+            color={isPlaying ? "primary" : "default"}
+          >
+            {isPlaying ? <Pause /> : <PlayArrow />}
+          </IconButton>
         </Grid>
-        <Grid item xs={8}>
+        <Grid item xs={10}>
           <Slider
             value={timeStep}
             onChange={handleTimeStepChange}
@@ -974,16 +1226,18 @@ export default function MicroscopicView({
             max={totalTimeSteps - 1}
             step={1}
             valueLabelDisplay="auto"
+            valueLabelFormat={(value: number) => `Step ${value}`}
           />
         </Grid>
-        <Grid item xs={2}>
-          <Typography>
-            Step: {timeStep}/{totalTimeSteps - 1}
+        <Grid item xs={1}>
+          <Typography variant="body2" align="center">
+            {timeStep}/{totalTimeSteps - 1}
           </Typography>
         </Grid>
       </Grid>
 
-      <Box mt={2}>
+      {/* Status information */}
+      <Box mt={1}>
         <Typography
           variant="body2"
           color="text.secondary"
